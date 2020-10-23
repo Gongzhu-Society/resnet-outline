@@ -51,6 +51,7 @@ class BasicBlock(nn.Module):
         out = F.relu(out)
         return out
 
+
 class Bottleneck(nn.Module):
     # 前面1x1和3x3卷积的filter个数相等，最后1x1卷积是其expansion倍
     expansion = 4
@@ -82,10 +83,9 @@ class Bottleneck(nn.Module):
         out = F.relu(out)
         return out
 
-
-class PNet(nn.Module):
-    def __init__(self, block=BasicBlock, num_blocks=[2,2,2,2], num_classes=52):
-        super(PNet, self).__init__()
+class P1Net(nn.Module):
+    def __init__(self, block=BasicBlock, num_blocks=[2,2,2,2], num_classes=53):
+        super(P1Net, self).__init__()
         self.in_planes = 64
 
         self.conv1 = nn.Conv2d(1, 64, kernel_size=3,
@@ -117,7 +117,41 @@ class PNet(nn.Module):
         out = self.linear(out)
         return out
 
-'''
+class fullblock(nn.Module):
+    def __init__(self):
+        super(fullblock, self).__init__()
+        self.fc = nn.Linear(50,50)
+
+    def forward(self, x):
+        out = F.relu(self.fc(x))+x
+        return out
+class P2Net(nn.Module):
+    def __init__(self, block=BasicBlock, num_blocks=[2,2,2,2], num_classes=52):
+        super(P2Net, self).__init__()
+        self.fc1 = nn.Linear(2964, 1500)
+        self.fc2 = nn.Linear(1500, 750)
+
+        self.layer=[]
+        for i in range(50):
+            self.layer.append(self._make_layer(10))
+        self.fc3 = nn.Linear(50,52)
+
+    def _make_layer(self, number_of_blocks):
+        layers = [nn.Linear(750, 50)]
+        for i in range(number_of_blocks):
+            layers.append(fullblock())
+        layers.append(nn.Linear(50,1))
+        return nn.Sequential(*layers).to(torch.device('cuda'))
+
+    def forward(self, x):
+        out = F.relu(self.fc1(x.float()))
+        out = F.relu(self.fc2(out))
+        features = self.layer[0](out)
+        for i in range(1,50):
+            features = torch.cat((features, self.layer[i](out)), 1)
+        out = self.fc3(features)
+        return out
+
 class PNet(nn.Module):
 
     def __init__(self):
@@ -152,11 +186,11 @@ class PNet(nn.Module):
         x = F.relu(self.fc44(x))
 
         x = F.relu(self.fc5(x+x1))
-        x = F.relu(self.fc6(x))
-        x = F.relu(self.fc7(x))
+        #x = F.relu(self.fc6(x))
+        x = F.relu(self.fc7(x+F.relu(self.fc6(x))))
         x = self.fc8(x)
         return x
-'''
+
 class Robot():
     def __init__(self, pnet):
         self.pnet = pnet
@@ -233,7 +267,7 @@ class Robot():
             return legal_choices
         # elsewise, we need the policy network
 
-        net_output = self.pnet(input.unsqueeze(0))
+        net_output = self.pnet(input)
         net_output = net_output[0][0:52]
         #print('netoutput', net_output)
         probability = self.output_to_probability(net_output, torch.tensor(legal_choices).to(device))
